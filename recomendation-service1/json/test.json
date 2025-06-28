@@ -1,0 +1,14 @@
+{
+    "employer_id": 1,
+    "title": "abc intern",
+    "description": "    Job description Design and implement sophisticated scalable multi-threaded Object Oriented Software in C++ for solving challenging problems involving high speed data processing and networking\n    Design advanced software modules that follow modern C++ design patterns\n    Apply C programming skills for Linux device driver development and debugging\n    Apply problem solving skills and experience to identify and improve low-level system performance issues\n    Apply engineering principles to design algorithms for controlling image acquisition parameters, as well as environmental conditions (Temperature, Power, Fog, Frost, etc.)\n    Create design documents on software architecture and algorithms\n    Collaborate with Hardware designers on board bring-up and debug\n    Maintain and improve Firmware build system using Make and Python\n    Collaborate with Quality Assurance team on identifying test cases for new features and areas for regression tests\n    Follow the established development process for all design and implementation tasks\n    Your skills and experience\n    \n    A team player Why you will love working here\n    Compensation & bonus: 13th & 14th salary, AIP bonus, Holidays, Tet, and Long year service …\n    Social insurance, Health insurance, Unemployment insurance: by Social Insurance and Labor Law\n    The regime of annual leave, company trip, and checkup examination\n    Award for marriage, newborn\n    We have AON insurance package for employee, spouse, and children every year\n    You will be trained, learned & work with the best technical managers who help you improve various dev skills & career path\n    You’ll love working in our dynamic environment employees, young & active\n    We love sport activities, as marathon, football, swimming,...\n    Working time: From Monday to Friday | 08: 30-12: 00 & 13: 00-17.30",
+    "required": "Bachelor / Master degree in Computer Engineering, Software Engineering. Having a EE background is a plus.\n    Experience in writing quality C or Modern C++ on Linux OS based embedded systems. Experience in Rust is a plus.\n    Experience in the Linux build system. Familiarity with Yocto is a plus.\n    knowledge in writing low level programming for HW peripherals and drivers.\n    Knowledge on networking protocols / connectivity, such as Wifi, Bluetooth, used with embedded systems\n    Knowledge in camera linux embedded systems is a plus.\n    Good written English and oral communication skills.\n    Desire to learn.",
+    "address": "string",
+    "location_id": 1,
+    "salary": "20000",
+    "experience_id": 1,
+    "member": "string",
+    "work_type_id": 1,
+     "category_id": 1,
+     "posted_expired":"string"
+}
