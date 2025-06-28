@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 import spacy
 from docx import Document
 
-router = APIRouter(prefix="/cv", tags=["CV Processing"])
+router = APIRouter(prefix="/python/cv", tags=["CV Processing"])
 
 # Load spaCy model
 nlp_en = spacy.load('en_core_web_md')
@@ -124,12 +124,9 @@ async def extract_all_features_api(
             db.query(MatchesModel).filter(MatchesModel.cv_id == existing_cv.id).delete()
 
             # Update existing CV
-            existing_cv.name = file.filename
             existing_cv.upload_at = datetime.now()
             existing_cv.skills = ', '.join(features['skills_required'])  # Sử dụng skills_required thay vì primary_skills
-            existing_cv.primary_skills = None
             existing_cv.experience = None
-            existing_cv.secondary_skills = None
             existing_cv.adverbs = ', '.join(features['adverbs'])
             existing_cv.adjectives = ', '.join(features['adjectives'])
 
@@ -142,13 +139,10 @@ async def extract_all_features_api(
             # Create new CV
             cv_record = CVModel(
                 seeker_id=seeker_id,
-                name=file.filename,
                 skills="skills",
                 experience="experiments",
                 status=1,
                 upload_at=datetime.now(),
-                primary_skills=', '.join(features['skills_required']),
-                secondary_skills=None,
                 adverbs=', '.join(features['adverbs']),
                 adjectives=', '.join(features['adjectives'])
             )

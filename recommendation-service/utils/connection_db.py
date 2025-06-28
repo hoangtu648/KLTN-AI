@@ -36,8 +36,6 @@ class CVModel(Base):
     link_git = Column(Text)
     upload_at = Column(DateTime, nullable=False)
     # New columns for features
-    primary_skills = Column(JSON)
-    secondary_skills = Column(JSON)
     adverbs = Column(JSON)
     adjectives = Column(JSON)
 
