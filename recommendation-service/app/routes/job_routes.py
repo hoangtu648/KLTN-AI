@@ -12,7 +12,7 @@ import re
 import json
 import unicodedata
 
-router = APIRouter(prefix="/job", tags=["Job Description Processing"])
+router = APIRouter(prefix="/python/job", tags=["Job Description Processing"])
 
 # Load spaCy model
 nlp_en = spacy.load('en_core_web_md')
@@ -120,3 +120,42 @@ async def extract_all_features_jd_api(
 
     return JobResponse4Cluster(**features)
 
+
+@router.post("/extract/refresh-skills/{job_id}", response_model=JobResponse4Cluster)
+async def refresh_job_skills(
+    job_id: int,
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"🔍 Fetching job with ID: {job_id}")
+        job = db.query(JobModel).filter(JobModel.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job with ID {job_id} not found")
+
+        print("✅ Job found")
+        print("🧼 Cleaning text...")
+        cleaned_description = clean_text_for_matching(job.description or "")
+        cleaned_required = clean_text_for_matching(job.required or "")
+
+        print("🛠 Extracting features...")
+        features = extract_all_features(cleaned_required, cleaned_description)
+        print("🎯 Extracted features:", features)
+
+        print("📝 Updating job record in DB...")
+        job.skills = ", ".join(features['primary_skills']) if features['primary_skills'] else ""
+        job.primary_skills = ', '.join(features['primary_skills'])
+        job.secondary_skills = ', '.join(features['secondary_skills'])
+        job.adverbs = ', '.join(features['adverbs'])
+        job.adjectives = ', '.join(features['adjectives'])
+
+        db.commit()
+        db.refresh(job)
+        print(f"✅ Updated job {job_id} successfully.")
+
+        print("📤 Returning response model")
+        return JobResponse4Cluster(**features)
+
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Exception occurred: {type(e).__name__} - {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating skills for job {job_id}: {str(e)}")

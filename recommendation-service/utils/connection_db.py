@@ -61,10 +61,11 @@ class JobModel(Base):
     work_type_id = Column(Integer, nullable=False)
     category_id = Column(Integer, nullable=False)
     # New columns for features
-    primary_skills = Column(JSON)
-    secondary_skills = Column(JSON)
-    adverbs = Column(JSON)
-    adjectives = Column(JSON)
+    skills = Column(Text)
+    primary_skills = Column(Text)
+    secondary_skills = Column(Text)
+    adverbs = Column(Text)
+    adjectives = Column(Text)
 
 # Matches Model
 class MatchesModel(Base):
