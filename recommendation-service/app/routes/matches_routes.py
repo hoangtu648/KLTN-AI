@@ -14,7 +14,7 @@ from utils.connection_db import get_db, CVModel, JobModel, MatchesModel
 from sqlalchemy.orm import Session
 import spacy
 
-router = APIRouter(prefix="/match", tags=["Job-CV Matching"])
+router = APIRouter(prefix="/python/match", tags=["Job-CV Matching"])
 
 # Load spaCy model
 nlp_en = spacy.load('en_core_web_md')
@@ -184,7 +184,7 @@ async def match_cv_with_all_jobs(cv_id: int, db: Session = Depends(get_db)):
     # Sử dụng skills_required từ CV
     cv_features = {
     'skills': safe_split(cv.skills),          # primary skills (hoặc cv.skills_required)
-    'secondary_skills': safe_split(cv.secondary_skills),
+    'secondary_skills': safe_split(cv.skills),
     'adverbs': safe_split(cv.adverbs),
     'adjectives': safe_split(cv.adjectives)
 }
