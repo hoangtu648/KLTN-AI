@@ -159,3 +159,26 @@ async def refresh_job_skills(
         db.rollback()
         print(f"❌ Exception occurred: {type(e).__name__} - {e}")
         raise HTTPException(status_code=500, detail=f"Error updating skills for job {job_id}: {str(e)}")
+
+
+@router.get("/extract/all-features-in-DB")
+async def extract_all_features_in_DB(
+    db: Session = Depends(get_db)
+):
+    try:
+        jobs = db.query(JobModel).all()
+        for job in jobs:
+            cleaned_description = clean_text_for_matching(job.description)
+            cleaned_required = clean_text_for_matching(job.required)
+            features = extract_all_features(cleaned_required, cleaned_description)
+            job.primary_skills = ', '.join(features['primary_skills'])
+            job.secondary_skills = ', '.join(features['secondary_skills'])
+            job.adverbs = ', '.join(features['adverbs'])
+            job.adjectives = ', '.join(features['adjectives'])
+            job.skills = ', '.join(features['primary_skills'])
+            db.commit()
+            db.refresh(job)
+        return {"message": "All features extracted and saved to database"}
+    except Exception as e:
+        print(f"❌ Error extracting features from database: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")

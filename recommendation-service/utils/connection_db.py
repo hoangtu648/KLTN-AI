@@ -47,7 +47,7 @@ class JobModel(Base):
     employer_id = Column(Integer, nullable=False)
     title = Column(Text, nullable=False)
     description = Column(Text)
-    description_json = Column(JSON)
+    description_json = Column(Text, nullable=True)
     required = Column(Text, nullable=False)
     address = Column(Text, nullable=False)
     location_id = Column(Integer, nullable=False)
