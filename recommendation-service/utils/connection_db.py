@@ -142,6 +142,7 @@ class MatchesModel(Base):
     cv_id = Column(Integer, nullable=False)
     job_id = Column(Integer, nullable=False)
     accuracy = Column(Integer, nullable=False)
+    label = Column(String(50), nullable=True)
     matched_skill = Column(Text, nullable=False)
     time_matches = Column(DateTime, nullable=False)
     status = Column(Integer, nullable=False)
