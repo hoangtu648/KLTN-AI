@@ -5,7 +5,8 @@ from app.routes.root_routes import router as root_router
 from app.routes.cv_routes import router as cv_router
 from app.routes.job_routes import router as job_router
 from app.routes.matches_routes import router as matches_router
-from py_eureka_client import eureka_client  # bạn quên import chỗ này?
+from py_eureka_client import eureka_client 
+from apscheduler.triggers.cron import CronTrigger
 
 # Download required NLTK data
 nltk.download('punkt')
@@ -32,6 +33,17 @@ app = FastAPI(title="Job-Resume Matching API", version="1.0.0")
 # Startup event để đăng ký Eureka
 @app.on_event("startup")
 async def startup_event():
+    from app.routes.application_routes import scheduler, process_matches
+    if not scheduler.running:
+        scheduler.add_job(
+            process_matches,
+            'interval',
+            # seconds=10,
+            hours=3,
+            id='process_matches_job',
+            replace_existing=True
+        )
+        scheduler.start()
     await init_eureka()
 
 # Include routers
@@ -40,6 +52,12 @@ app.include_router(cv_router)
 app.include_router(job_router)
 app.include_router(matches_router)
 
+# Shutdown scheduler when application stops
+@app.on_event("shutdown")
+async def shutdown_scheduler():
+    from app.routes.application_routes import scheduler
+    if scheduler.running:
+        scheduler.shutdown()
 
 if __name__ == "__main__":
     import uvicorn
