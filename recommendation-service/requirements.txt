@@ -69,3 +69,6 @@ wrapt==1.17.2
 xgboost==3.0.2
 py-eureka-client
 apscheduler
+deep-translator==1.11.4
+langdetect==1.0.9
+soupsieve==2.7

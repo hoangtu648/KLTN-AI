@@ -6,6 +6,7 @@ from schemas.job_schemas import JobResponse4Cluster
 from utils.read_file import read_skills
 from utils.extract import extract_skills, extract_adjectives, extract_adverbs, clean_text_for_matching
 from utils.connection_db import get_db, JobModel
+from utils.translate import detect_and_translate, translate_list
 from sqlalchemy.orm import Session
 import spacy
 import re
@@ -21,10 +22,13 @@ nlp_en = spacy.load('en_core_web_md')
 skills = read_skills('app/skills.txt')
 
 def extract_all_features(text_required: str, text_description: str) -> Dict[str, List[str]]:
-    primary_skills_list = extract_skills(text_required, skills)
-    secondary_skills_list = extract_skills(text_description, skills)
-    adverbs = extract_adverbs(text_description, nlp_en)
-    adjectives = extract_adjectives(text_description, nlp_en)
+    translated_required = detect_and_translate(text_required)
+    translated_description = detect_and_translate(text_description)
+
+    primary_skills_list = extract_skills(translated_required, skills)
+    secondary_skills_list = extract_skills(translated_description, skills)
+    adverbs = extract_adverbs(translated_description, nlp_en)
+    adjectives = extract_adjectives(translated_description, nlp_en)
 
     return {
         'primary_skills': primary_skills_list,
@@ -121,64 +125,71 @@ async def extract_all_features_jd_api(
     return JobResponse4Cluster(**features)
 
 
-@router.post("/extract/refresh-skills/{job_id}", response_model=JobResponse4Cluster)
-async def refresh_job_skills(
-    job_id: int,
-    db: Session = Depends(get_db)
-):
-    try:
-        print(f"🔍 Fetching job with ID: {job_id}")
-        job = db.query(JobModel).filter(JobModel.id == job_id).first()
-        if not job:
-            raise HTTPException(status_code=404, detail=f"Job with ID {job_id} not found")
-
-        print("✅ Job found")
-        print("🧼 Cleaning text...")
-        cleaned_description = clean_text_for_matching(job.description or "")
-        cleaned_required = clean_text_for_matching(job.required or "")
-
-        print("🛠 Extracting features...")
-        features = extract_all_features(cleaned_required, cleaned_description)
-        print("🎯 Extracted features:", features)
-
-        print("📝 Updating job record in DB...")
-        job.skills = ", ".join(features['primary_skills']) if features['primary_skills'] else ""
-        job.primary_skills = ', '.join(features['primary_skills'])
-        job.secondary_skills = ', '.join(features['secondary_skills'])
-        job.adverbs = ', '.join(features['adverbs'])
-        job.adjectives = ', '.join(features['adjectives'])
-
-        db.commit()
-        db.refresh(job)
-        print(f"✅ Updated job {job_id} successfully.")
-
-        print("📤 Returning response model")
-        return JobResponse4Cluster(**features)
-
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Exception occurred: {type(e).__name__} - {e}")
-        raise HTTPException(status_code=500, detail=f"Error updating skills for job {job_id}: {str(e)}")
-
-
 @router.get("/extract/all-features-in-DB")
 async def extract_all_features_in_DB(
     db: Session = Depends(get_db)
 ):
     try:
         jobs = db.query(JobModel).all()
+        updated_count = 0
+        
         for job in jobs:
+            print(f"\n🔄 Processing Job ID: {job.id}")
+            print(f"Title: {job.title}")
+            
+            # Extract and translate features from job description
             cleaned_description = clean_text_for_matching(job.description)
             cleaned_required = clean_text_for_matching(job.required)
-            features = extract_all_features(cleaned_required, cleaned_description)
-            job.primary_skills = ', '.join(features['primary_skills'])
-            job.secondary_skills = ', '.join(features['secondary_skills'])
-            job.adverbs = ', '.join(features['adverbs'])
-            job.adjectives = ', '.join(features['adjectives'])
-            job.skills = ', '.join(features['primary_skills'])
-            db.commit()
-            db.refresh(job)
-        return {"message": "All features extracted and saved to database"}
+            
+            # Translate cleaned text if it's in Vietnamese
+            translated_description = detect_and_translate(cleaned_description)
+            translated_required = detect_and_translate(cleaned_required)
+            
+            # Extract primary skills from translated required field
+            primary_skills = extract_skills(translated_required, skills)
+            print(f"Primary skills: {primary_skills}")
+            
+            # Extract all skills from translated description
+            all_description_skills = extract_skills(translated_description, skills)
+            print(f"All description skills: {all_description_skills}")
+            
+            # Calculate secondary skills (skills in description that are not in primary skills)
+            primary_skills_set = {skill.lower().strip() for skill in primary_skills}
+            all_skills_set = {skill.lower().strip() for skill in all_description_skills}
+            secondary_skills = list(all_skills_set - primary_skills_set)
+            print(f"Secondary skills (after removing primary skills): {secondary_skills}")
+            
+            # Extract other features from translated description
+            adverbs = extract_adverbs(translated_description, nlp_en)
+            adjectives = extract_adjectives(translated_description, nlp_en)
+            
+            # Update job record
+            try:
+                # Convert lists to JSON strings
+                job.primary_skills = json.dumps(primary_skills)
+                job.secondary_skills = json.dumps(secondary_skills)
+                job.adverbs = json.dumps(adverbs)
+                job.adjectives = json.dumps(adjectives)
+                
+                updated_count += 1
+                print(f"✅ Updated features for job {job.id}")
+                
+            except Exception as e:
+                print(f"⚠️ Error updating job {job.id}: {str(e)}")
+                continue
+        
+        # Commit all changes
+        db.commit()
+        return {
+            "message": f"Successfully updated features for {updated_count} jobs",
+            "total_jobs": len(jobs),
+            "updated_jobs": updated_count
+        }
+        
     except Exception as e:
         print(f"❌ Error extracting features from database: {e}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        
+        
+        
