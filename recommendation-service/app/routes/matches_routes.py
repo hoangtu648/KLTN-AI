@@ -13,6 +13,7 @@ from utils.read_file import read_skills
 from utils.extract import extract_skills, extract_adjectives, extract_adverbs, clean_text_for_matching
 from utils.connection_db import get_db, CVModel, JobModel, MatchesModel
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 import spacy
 def write_log(cv_id: int, message: str):
     """Write log message to file"""
@@ -320,6 +321,17 @@ def parse_cv_skills(skills_data: str) -> List[str]:
         return [skill.strip().lower() for skill in skills_data.split(',') if skill.strip()]
     return []
 
+from starlette.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session
+from fastapi import HTTPException, Depends
+from datetime import datetime
+
+# ... giữ nguyên các import/hàm util của bạn:
+# parse_cv_skills, parse_job_skills, calculate_similarity,
+# get_matched_primary_skills, predict_suitability,
+# write_log, CVModel, JobModel, MatchesModel, CVMatchResponse, MatchResult, get_db
+# ---------------------------------------------------------------
+
 @router.post("/cv/{cv_id}/match-all-jobs", response_model=CVMatchResponse)
 async def match_cv_with_all_jobs(cv_id: int, db: Session = Depends(get_db)):
     """
@@ -345,7 +357,7 @@ async def match_cv_with_all_jobs(cv_id: int, db: Session = Depends(get_db)):
         write_log(cv_id, f"❌ {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
-    # Parse CV skills
+    # Parse CV skills & features
     try:
         cv_skills = parse_cv_skills(cv.primary_skills) if cv.primary_skills else []
         write_log(cv_id, f"\nCV Data:")
@@ -353,7 +365,6 @@ async def match_cv_with_all_jobs(cv_id: int, db: Session = Depends(get_db)):
         write_log(cv_id, f"Raw CV skills: {cv.primary_skills}")
         write_log(cv_id, f"Parsed CV skills: {cv_skills}")
 
-        # Sử dụng skills_required từ CV
         cv_features = {
             'skills_required': cv_skills,
             'secondary_skills': parse_cv_skills(cv.secondary_skills) if cv.secondary_skills else [],
@@ -366,99 +377,108 @@ async def match_cv_with_all_jobs(cv_id: int, db: Session = Depends(get_db)):
         write_log(cv_id, f"❌ {error_msg}")
         raise HTTPException(status_code=500, detail=error_msg)
 
-    # Get all active jobs
-    jobs = db.query(JobModel).filter(JobModel.status == 1).all()
-    if not jobs:
-        write_log(cv_id, "No active jobs found")
-        raise HTTPException(status_code=404, detail="No active jobs found")
+    # ----------- PHẦN NẶNG: đưa vào threadpool để không block event loop ----------
+    def _heavy_work():
+        # Get all active jobs
+        jobs = db.query(JobModel).filter(JobModel.status == 1).all()
+        if not jobs:
+            write_log(cv_id, "No active jobs found")
+            # Trả về rỗng để endpoint xử lý tiếp
+            return [], []
 
-    write_log(cv_id, f"\nProcessing {len(jobs)} active jobs")
-    suitable_matches = []  # List to store only suitable matches
-    new_matches = []  # List to store new matches for batch insert
+        write_log(cv_id, f"\nProcessing {len(jobs)} active jobs")
+        suitable_matches = []  # List to store only suitable matches
+        new_matches = []       # List to store new matches for batch insert
 
-    for job in jobs:
-        try:
-            write_log(cv_id, f"\nProcessing Job {job.id} - {job.title}")
-            
-            # Parse job skills from JSON
+        for job in jobs:
             try:
-                job_skills = parse_job_skills(job.primary_skills) if job.primary_skills else []
-                write_log(cv_id, f"Raw job skills: {job.primary_skills}")
-                write_log(cv_id, f"Parsed job skills: {job_skills}")
-
-                # Get job features
-                job_features = {
-                    'primary_skills': job_skills,
-                    'secondary_skills': parse_job_skills(job.secondary_skills) if job.secondary_skills else [],
-                    'adverbs': job.adverbs.split(',') if job.adverbs else [],
-                    'adjectives': job.adjectives.split(',') if job.adjectives else []
-                }
-                write_log(cv_id, f"Job features: {job_features}")
-
-                # Calculate Jaccard similarities
+                write_log(cv_id, f"\nProcessing Job {job.id} - {job.title}")
+                
+                # Parse job skills from JSON
                 try:
-                    similarities = calculate_similarity(cv_features, job_features)
-                    write_log(cv_id, f"Calculated similarities: {similarities}")
+                    job_skills = parse_job_skills(job.primary_skills) if job.primary_skills else []
+                    write_log(cv_id, f"Raw job skills: {job.primary_skills}")
+                    write_log(cv_id, f"Parsed job skills: {job_skills}")
 
-                    # Get matched primary skills
-                    matched_primary_skills = get_matched_primary_skills(
-                        cv_features['skills_required'],
-                        job_features['primary_skills']
-                    )
-                    write_log(cv_id, f"Matched skills: {matched_primary_skills}")
+                    # Get job features
+                    job_features = {
+                        'primary_skills': job_skills,
+                        'secondary_skills': parse_job_skills(job.secondary_skills) if job.secondary_skills else [],
+                        'adverbs': job.adverbs.split(',') if job.adverbs else [],
+                        'adjectives': job.adjectives.split(',') if job.adjectives else []
+                    }
+                    write_log(cv_id, f"Job features: {job_features}")
 
-                    # Predict suitability using the model
+                    # Calculate Jaccard similarities
                     try:
-                        prediction = predict_suitability(similarities['jaccard_scores'])
-                        label = prediction['label']
-                        accuracy = prediction['accuracy']
-                        write_log(cv_id, f"Prediction: {label}, Accuracy: {accuracy:.4f}")
-                    except Exception as e:
-                        write_log(cv_id, f"⚠️ Warning: Could not predict suitability for job {job.id}: {e}")
-                        label = "Unknown"
-                        accuracy = 0.0
+                        similarities = calculate_similarity(cv_features, job_features)
+                        write_log(cv_id, f"Calculated similarities: {similarities}")
 
-                    # Only process suitable matches
-                    if label in ['Moderately Suitable', 'Most Suitable']:
-                        # Create match result for response
-                        match_result = MatchResult(
-                            job_id=job.id,
-                            job_title=job.title,
-                            label=label,
-                            accuracy=accuracy,
-                            jaccard_scores=similarities['jaccard_scores'],
-                            matched_primary_skills=matched_primary_skills,
-                            matched_skills=similarities['matched_skills'],
-                            secondary_skills=similarities['secondary_skills']
+                        # Get matched primary skills
+                        matched_primary_skills = get_matched_primary_skills(
+                            cv_features['skills_required'],
+                            job_features['primary_skills']
                         )
-                        suitable_matches.append(match_result)
+                        write_log(cv_id, f"Matched skills: {matched_primary_skills}")
 
-                        # Create new match for database
-                        if matched_primary_skills:
-                            matched_skills_str = ", ".join(matched_primary_skills)
-                            new_match = MatchesModel(
-                                cv_id=cv_id,
+                        # Predict suitability using the model
+                        try:
+                            prediction = predict_suitability(similarities['jaccard_scores'])
+                            label = prediction['label']
+                            accuracy = prediction['accuracy']
+                            write_log(cv_id, f"Prediction: {label}, Accuracy: {accuracy:.4f}")
+                        except Exception as e:
+                            write_log(cv_id, f"⚠️ Warning: Could not predict suitability for job {job.id}: {e}")
+                            label = "Unknown"
+                            accuracy = 0.0
+
+                        # Only process suitable matches
+                        if label in ['Moderately Suitable', 'Most Suitable']:
+                            # Create match result for response
+                            match_result = MatchResult(
                                 job_id=job.id,
-                                matched_skill=matched_skills_str,
-                                time_matches=datetime.now(),
-                                status=1,
+                                job_title=job.title,
+                                label=label,
                                 accuracy=accuracy,
-                                label=label  # Add label to database
+                                jaccard_scores=similarities['jaccard_scores'],
+                                matched_primary_skills=matched_primary_skills,
+                                matched_skills=similarities['matched_skills'],
+                                secondary_skills=similarities['secondary_skills']
                             )
-                            new_matches.append(new_match)
-                            write_log(cv_id, f"✅ Added suitable match for job {job.id}")
+                            suitable_matches.append(match_result)
 
+                            # Create new match for database
+                            if matched_primary_skills:
+                                matched_skills_str = ", ".join(matched_primary_skills)
+                                new_match = MatchesModel(
+                                    cv_id=cv_id,
+                                    job_id=job.id,
+                                    matched_skill=matched_skills_str,
+                                    time_matches=datetime.now(),
+                                    status=1,
+                                    accuracy=accuracy,
+                                    label=label  # Add label to database
+                                )
+                                new_matches.append(new_match)
+                                write_log(cv_id, f"✅ Added suitable match for job {job.id}")
+
+                    except Exception as e:
+                        write_log(cv_id, f"⚠️ Warning: Error calculating similarities for job {job.id}: {e}")
+                        continue
                 except Exception as e:
-                    write_log(cv_id, f"⚠️ Warning: Error calculating similarities for job {job.id}: {e}")
+                    write_log(cv_id, f"⚠️ Warning: Error processing job features for job {job.id}: {e}")
                     continue
             except Exception as e:
-                write_log(cv_id, f"⚠️ Warning: Error processing job features for job {job.id}: {e}")
+                write_log(cv_id, f"⚠️ Warning: Error processing job {job.id}: {e}")
                 continue
-        except Exception as e:
-            write_log(cv_id, f"⚠️ Warning: Error processing job {job.id}: {e}")
-            continue
 
-    # Batch insert all new matches
+        return suitable_matches, new_matches
+
+    # Chạy phần nặng trong threadpool (không block event loop)
+    suitable_matches, new_matches = await run_in_threadpool(_heavy_work)
+    # ---------------------------------------------------------------------------
+
+    # Batch insert all new matches (như cũ)
     try:
         if new_matches:
             db.bulk_save_objects(new_matches)
@@ -483,6 +503,7 @@ async def match_cv_with_all_jobs(cv_id: int, db: Session = Depends(get_db)):
         total_matches=len(suitable_matches),
         matches=suitable_matches
     )
+
 
 # Initialize model on startup
 load_model()
