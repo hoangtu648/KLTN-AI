@@ -296,7 +296,7 @@ class PrimarySimTrainer:
         lr_base = LogisticRegression(random_state=42)
         results['LogisticRegression'] = self.train_model("Logistic Regression", lr_base, lr_params)
         
-        # 2. Random Forest
+        # 2. Decision Tree
         dt_params = {
             'criterion': ['gini', 'entropy'],
             'splitter': ['best', 'random'],
